@@ -31,13 +31,21 @@ import {
 
 import {
   isObservable,
+  merge,
   Observable,
   ReplaySubject,
   Subject,
   Subscription,
 } from 'rxjs';
-import { shareReplay, switchAll } from 'rxjs/operators';
+import {
+  combineLatest,
+  shareReplay,
+  switchAll,
+  switchMap,
+} from 'rxjs/operators';
 import { RxForViewContext } from './for-view-context';
+import { reconcile } from './list-reconciliation';
+import { LiveCollectionLContainerImpl } from './rx-live-collection';
 
 /**
  * @description Will be provided through Terser global definitions by Angular CLI
@@ -437,7 +445,24 @@ export class RxFor<T, U extends NgIterable<T> = NgIterable<T>>
   /** @internal */
   ngOnInit() {
     this._subscription.add(this.values$.subscribe((v) => (this.values = v)));
-    this.listManager = createListTemplateManager<T, RxForViewContext<T>>({
+    const liveCollection = new LiveCollectionLContainerImpl(
+      this.viewContainerRef,
+      this.templateRef,
+      this.strategyProvider
+    );
+    this._subscription.add(
+      this.values$
+        .pipe(
+          switchMap((values) => {
+            liveCollection.reset();
+            reconcile(liveCollection, values, this._trackBy);
+            liveCollection.updateIndexes();
+            return merge(...liveCollection.exhaustQueue());
+          })
+        )
+        .subscribe(() => {})
+    );
+    /*this.listManager = createListTemplateManager<T, RxForViewContext<T>>({
       iterableDiffers: this.iterableDiffers,
       renderSettings: {
         cdRef: this.cdRef,
@@ -460,7 +485,7 @@ export class RxFor<T, U extends NgIterable<T> = NgIterable<T>>
       this.listManager
         .render(this.values$)
         .subscribe((v) => this._renderCallback?.next(v))
-    );
+    );*/
   }
 
   /** @internal */
